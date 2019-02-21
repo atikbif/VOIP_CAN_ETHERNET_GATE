@@ -83,6 +83,7 @@
 
 extern CAN_HandleTypeDef hcan1;
 static uint8_t				 can_frame[20];
+static uint8_t				 ext_can_frame[20];
 static uint8_t               TxData[8];
 static CAN_TxHeaderTypeDef   TxHeader;
 static uint32_t              TxMailbox=0;
@@ -116,7 +117,7 @@ static void initCANFilter() {
 
 static void send_frame(uint8_t num, uint8_t *ptr) {
 	static uint32_t i;
-	TxHeader.StdId = 0x0001;
+	TxHeader.StdId = 0x00FF;
 	TxHeader.ExtId = 0;
 	TxHeader.RTR = CAN_RTR_DATA;
 	TxHeader.IDE = CAN_ID_STD;
@@ -262,18 +263,18 @@ void StartCanTask(void const * argument)
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-	//static uint8_t i = 0;
+	static uint8_t i = 0;
 	if(HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0)) {
 
 	  if(HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
-		  //if(RxData[0]==3 && RxHeader.DLC==7) toggle_second_led(RED);
+		  if(RxData[0]==3 && RxHeader.DLC==7) toggle_second_led(GREEN);
 
-		  /*if(RxData[0]==1) {for(i=0;i<7;i++) can_frame[i]=RxData[i+1];}
-		  else if(RxData[0]==2) {for(i=0;i<7;i++) can_frame[i+7]=RxData[i+1];}
+		  if(RxData[0]==1) {for(i=0;i<7;i++) ext_can_frame[i]=RxData[i+1];}
+		  else if(RxData[0]==2) {for(i=0;i<7;i++) ext_can_frame[i+7]=RxData[i+1];}
 		  else if(RxData[0]==3) {
-			  for(i=0;i<6;i++) can_frame[i+14]=RxData[i+1];
-			  frame_ready=1;
-		  }*/
+			  for(i=0;i<6;i++) ext_can_frame[i+14]=RxData[i+1];
+			  add_can_frame(ext_can_frame);
+		  }
 	  }
   }
 }

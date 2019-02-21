@@ -32,7 +32,7 @@ extern uint8_t conf_mask[4];
 extern uint8_t conf_gate[4];
 
 unsigned short udp_tmr = 0;
-
+extern unsigned char empty_buf[20];
 
 
 
@@ -70,6 +70,8 @@ void udp_server_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p
 	unsigned short crc;
 	unsigned short length = 0;
 	unsigned short offset = 0;
+	unsigned short answer_offset = 0;
+	unsigned char i=0;
 
 	data = (unsigned char*)(p->payload);
 	crc = GetCRC16(data,p->len);
@@ -96,16 +98,31 @@ void udp_server_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p
 			  SCB->AIRCR = 0x05FA0004;
 			  break;
 		  case 0x01:
+			  answer[0] = data[0];
+			  answer[1] = data[1];
+			  answer[2] = 0x01;
+			  answer[3] = data[3];
+			  answer[4] = data[4];
 
 			  length = (unsigned short)data[3]<<8;
 			  length |= data[4];
 			  if(length==40) toggle_first_led(GREEN);
 			  offset = 5;
+			  answer_offset = 5;
 			  while(length>=20) {
 				  add_frame(&data[offset]);
 				  offset+=20;
 				  length-=20;
+				  if(get_can_frame((unsigned char*)&answer[answer_offset])==0) {
+					  //toggle_second_led(RED);
+					  for(i=0;i<20;i++) answer[answer_offset+i]=empty_buf[i];
+				  }
+				  answer_offset+=20;
 			  }
+			  crc = GetCRC16((unsigned char*)answer,answer_offset);
+			  answer[answer_offset++] = crc>>8;
+			  answer[answer_offset++] = crc&0xFF;
+			  send_udp_data(upcb, addr, port,answer_offset);
 			  break;
 	  }
 	}
