@@ -90,6 +90,10 @@ static uint32_t              TxMailbox=0;
 static CAN_RxHeaderTypeDef   RxHeader;
 static uint8_t               RxData[8];
 
+unsigned short gate_id = 0xFE;
+unsigned char device_id = 0xFF;
+unsigned char from_id = 0x00;
+
 
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
@@ -117,7 +121,7 @@ static void initCANFilter() {
 
 static void send_frame(uint8_t num, uint8_t *ptr) {
 	static uint32_t i;
-	TxHeader.StdId = 0x00FF;
+	TxHeader.StdId = gate_id;
 	TxHeader.ExtId = 0;
 	TxHeader.RTR = CAN_RTR_DATA;
 	TxHeader.IDE = CAN_ID_STD;
@@ -138,9 +142,10 @@ static void send_frame(uint8_t num, uint8_t *ptr) {
 		HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
 		break;
 	case 3:
-		TxHeader.DLC = 0x07;
+		TxHeader.DLC = 0x08;
 		TxData[0] = 0x03;
 		for(i=0;i<6;i++) TxData[i+1] = ptr[i+14];
+		TxData[7] = device_id;
 		//while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) == 0) {osDelay(1);}
 		HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
 		break;
@@ -267,13 +272,14 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 	if(HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0)) {
 
 	  if(HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
-		  if(RxData[0]==3 && RxHeader.DLC==7) toggle_second_led(GREEN);
+		  if(RxData[0]==3 && RxHeader.DLC==8) toggle_second_led(GREEN);
 
 		  if(RxData[0]==1) {for(i=0;i<7;i++) ext_can_frame[i]=RxData[i+1];}
 		  else if(RxData[0]==2) {for(i=0;i<7;i++) ext_can_frame[i+7]=RxData[i+1];}
 		  else if(RxData[0]==3) {
 			  for(i=0;i<6;i++) ext_can_frame[i+14]=RxData[i+1];
 			  add_can_frame(ext_can_frame);
+			  from_id = RxHeader.StdId;
 		  }
 	  }
   }
