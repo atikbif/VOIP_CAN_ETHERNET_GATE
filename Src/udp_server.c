@@ -75,6 +75,8 @@ void udp_server_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p
 	unsigned short offset = 0;
 	unsigned short answer_offset = 0;
 	unsigned char i=0;
+	static unsigned char pckt_cnt = 0;
+	static unsigned char pckt_length[20];
 
 	data = (unsigned char*)(p->payload);
 	crc = GetCRC16(data,p->len);
@@ -103,27 +105,26 @@ void udp_server_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p
 		  case 0x01:
 			  answer[0] = data[0];
 			  answer[1] = data[1];
-			  answer[2] = 0x01;
-			  answer[3] = data[3];
-			  answer[4] = data[4];
+			  answer[2] = 0x01;		// cmd
+			  answer[3] = 0x00;  // from_id
+			  device_id = data[3];
+			  pckt_cnt = data[4];if(pckt_cnt>=20) pckt_cnt=0;
+			  answer[4] = pckt_cnt;
+			  for(i=0;i<pckt_cnt;i++) pckt_length[i] = data[5+i];
+			  offset = 5 + pckt_cnt;
+			  answer_offset = 5 + pckt_cnt;
+			  toggle_first_led(GREEN);
 
-			  device_id = data[5];
-
-			  length = (unsigned short)data[3]<<8;
-			  length |= data[4];
-			  if(length==40) toggle_first_led(GREEN);
-			  offset = 6;
-			  answer_offset = 6;
-			  while(length>=20) {
-				  add_frame(&data[offset]);
-				  offset+=20;
-				  length-=20;
-				  if(get_can_frame((unsigned char*)&answer[answer_offset])==0) {
-					  //toggle_second_led(RED);
-					  for(i=0;i<20;i++) answer[answer_offset+i]=empty_buf[i];
-					  answer[5] = 0x00;
-				  }else answer[5] = from_id;
-				  answer_offset+=20;
+			  for(i=0;i<pckt_cnt;i++) {
+				  add_frame(&data[offset],pckt_length[i]);
+				  offset+=pckt_length[i];
+				  length=get_can_frame((unsigned char*)&answer[answer_offset]);
+				  if(length) toggle_second_led(GREEN); else toggle_second_led(RED);
+				  answer[5+i] = length;
+				  if(length) {
+					  answer[3] = from_id;
+					  answer_offset+=length;
+				  }
 			  }
 			  crc = GetCRC16((unsigned char*)answer,answer_offset);
 			  answer[answer_offset++] = crc>>8;
@@ -133,26 +134,24 @@ void udp_server_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p
 		  case 0x02:
 			  answer[0] = data[0];
 			  answer[1] = data[1];
-			  answer[2] = 0x01;
-			  answer[3] = data[3];
-			  answer[4] = data[4];
+			  answer[2] = 0x02;		// cmd
+			  answer[3] = 0x00;  // from_id
+			  device_id = data[3];
+			  pckt_cnt = data[4];if(pckt_cnt>=20) pckt_cnt=0;
+			  answer[4] = pckt_cnt;
+			  for(i=0;i<pckt_cnt;i++) pckt_length[i] = data[5+i];
+			  offset = 5 + pckt_cnt;
+			  answer_offset = 5 + pckt_cnt;
+			  toggle_first_led(GREEN);
 
-			  device_id = data[5];
-
-			  length = (unsigned short)data[3]<<8;
-			  length |= data[4];
-			  if(length==40) toggle_first_led(GREEN);
-			  offset = 6;
-			  answer_offset = 6;
-			  while(length>=20) {
-				  offset+=20;
-				  length-=20;
-				  if(get_can_frame((unsigned char*)&answer[answer_offset])==0) {
-					  //toggle_second_led(RED);
-					  for(i=0;i<20;i++) answer[answer_offset+i]=empty_buf[i];
-					  answer[5] = 0x00;
-				  }else answer[5] = from_id;
-				  answer_offset+=20;
+			  for(i=0;i<pckt_cnt;i++) {
+				  offset+=pckt_length[i];
+				  length=get_can_frame((unsigned char*)&answer[answer_offset]);
+				  answer[5+i] = length;
+				  if(length) {
+					  answer[3] = from_id;
+					  answer_offset+=length;
+				  }
 			  }
 			  crc = GetCRC16((unsigned char*)answer,answer_offset);
 			  answer[answer_offset++] = crc>>8;

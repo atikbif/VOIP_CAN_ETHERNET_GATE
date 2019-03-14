@@ -81,9 +81,12 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 
+extern unsigned short sys_tmr;
+
 extern CAN_HandleTypeDef hcan1;
-static uint8_t				 can_frame[20];
-static uint8_t				 ext_can_frame[20];
+static uint8_t				 can_frame[40];
+static uint8_t				 ext_can_frame[40];
+static uint8_t				 ext_can_frame_id[256][40];
 static uint8_t               TxData[8];
 static CAN_TxHeaderTypeDef   TxHeader;
 static uint32_t              TxMailbox=0;
@@ -117,6 +120,46 @@ static void initCANFilter() {
 	sFilterConfig.SlaveStartFilterBank = 14;
 
 	HAL_CAN_ConfigFilter(&hcan1, &sFilterConfig);
+}
+
+static void send_full_frame(uint8_t len, uint8_t *ptr) {
+	uint8_t i=len;
+	uint8_t cur_pckt = 1;
+	uint8_t pckt_cnt = 0;
+
+	while(i) {
+		pckt_cnt++;
+		if(i<=6) {i=0;}
+		else i-=7;
+	}
+	i=1;
+
+	while(len>0) {
+		TxHeader.StdId = gate_id;
+		TxHeader.ExtId = 0;
+		TxHeader.RTR = CAN_RTR_DATA;
+		TxHeader.IDE = CAN_ID_STD;
+		TxHeader.TransmitGlobalTime = DISABLE;
+		if(len<=6) { // last packet
+			TxHeader.DLC = 2+len;
+			TxData[0] = (cur_pckt&0x0F)|((pckt_cnt&0x0F)<<4); // current packet number and packets cnt
+			TxData[1] = device_id;
+			for(i=0;i<len;i++) TxData[i+2] = ptr[(cur_pckt-1)*7+i];
+			while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) == 0) {osDelay(1);}
+			HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
+			cur_pckt++;
+			len=0;
+		}else {
+			TxHeader.DLC = 0x08;
+			TxData[0] = (cur_pckt&0x0F)|((pckt_cnt&0x0F)<<4); // current packet number and packets cnt
+			for(i=0;i<7;i++) TxData[i+1] = ptr[(cur_pckt-1)*7+i];
+			while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) == 0) {osDelay(1);}
+			HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
+			cur_pckt++;
+			len-=7;
+		}
+	}
+	//HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port,GREEN_LED_Pin);
 }
 
 static void send_frame(uint8_t num, uint8_t *ptr) {
@@ -237,6 +280,7 @@ void StartCanTask(void const * argument)
 {
   /* USER CODE BEGIN StartCanTask */
 	static unsigned char cnt = 0;
+	static unsigned char length = 0;
 
 	initCANFilter();
 	HAL_CAN_Start(&hcan1);
@@ -249,15 +293,23 @@ void StartCanTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	  if(cnt) cnt--;
-	  if(cnt==0) {
-		  if(get_frame(can_frame)) {
-			  cnt=20;
-			  send_frame(1,can_frame);
-			  send_frame(2,can_frame);
-			  send_frame(3,can_frame);
+	  if(sys_tmr>=20) {
+		  sys_tmr = 0;
+		  length = get_frame(can_frame);
+		  if(length) {
+			  send_full_frame(length,can_frame);
+
 		  }else toggle_second_led(RED);
 	  }
+	  /*if(cnt) cnt--;
+	  if(cnt==0) {
+		  length = get_frame(can_frame);
+		  if(length) {
+			  cnt=20;
+			  send_full_frame(length,can_frame);
+			  //toggle_second_led(GREEN);
+		  }//else toggle_second_led(RED);
+	  }*/
 	  osDelay(1);
   }
   /* USER CODE END StartCanTask */
@@ -269,6 +321,7 @@ void StartCanTask(void const * argument)
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
 	static uint8_t i = 0;
+	/*
 	if(HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0)) {
 
 	  if(HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
@@ -280,6 +333,28 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 			  for(i=0;i<6;i++) ext_can_frame[i+14]=RxData[i+1];
 			  add_can_frame(ext_can_frame);
 			  from_id = RxHeader.StdId;
+		  }
+	  }
+  }*/
+	static uint8_t cur_num = 0;
+	static uint8_t cnt = 0;
+	static uint8_t length = 0;
+	if(HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0)) {
+
+	  if(HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
+
+		  cur_num = RxData[0] & 0x0F;
+		  cnt = RxData[0] >> 4;
+		  if(cur_num==cnt) {
+			  for(i=0;i<RxHeader.DLC-2;i++) ext_can_frame_id[RxHeader.StdId][(cur_num-1)*7+i]=RxData[i+2];
+			  length = (cnt-1)*7+RxHeader.DLC-2;
+			  for(i=0;i<length;i++) ext_can_frame[i]=ext_can_frame_id[RxHeader.StdId][i];
+			  add_can_frame(ext_can_frame,length);
+			  from_id = RxHeader.StdId;
+
+
+		  }else {
+			  for(i=0;i<7;i++) ext_can_frame_id[RxHeader.StdId][(cur_num-1)*7+i]=RxData[i+1];
 		  }
 	  }
   }
